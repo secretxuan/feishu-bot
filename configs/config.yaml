@@ -1,0 +1,51 @@
+# 飞书机器人配置文件
+feishu:
+  # 飞书应用凭证
+  app_id: "cli_a90f6dbb05f89cd3"                          # 从飞书开放平台获取
+  app_secret: "yJWSVkURwzccihI7NYIeHd456XYZRIzj"                      # 从飞书开放平台获取
+  # 指定话题群的 chat_id（转人工时在此群发起话题）
+  escalation_group_id: "oc_86348df233bdbaf275d22554842d08bd"             # 需要替换为实际的话题群ID
+
+# LLM 配置（支持 OpenAI 兼容格式）
+llm:
+  # LLM 提供商: zhipu, openai, dashscope, deepseek 等
+  provider: "zhipu"
+  # API 密钥
+  api_key: "b9397bddf43845779fe6595d39dc8f55.SbtLd1vfSvC6Gb8z"
+  # API 基础 URL（支持自定义 endpoint）
+  base_url: "https://open.bigmodel.cn/api/paas/v4"
+  # 模型名称
+  model: "glm-4-flash"
+  # 最大对话轮数（传递给 LLM 的历史消息数量）
+  max_history: 10
+
+# Redis 配置
+redis:
+  # Redis 服务器地址
+  addr: "localhost:6379"
+  # Redis 密码
+  password: ""
+  # 数据库编号
+  db: 0
+  # 会话过期时间（秒）
+  expiration: 600  # 10分钟
+
+# 机器人配置
+bot:
+  # 转人工触发关键词列表
+  escalation_keywords:
+    - "转人工"
+    - "人工"
+    - "人工客服"
+    - "转接人工"
+    - "客服"
+    - "确认提交"
+    - "提交"
+  # 清除上下文触发关键词列表
+  clear_context_keywords:
+    - "忘掉上下文"
+    - "清除上下文"
+    - "重新开始"
+    - "清空"
+  # 会话超时时间（分钟）
+  session_timeout: 30

@@ -1,0 +1,54 @@
+---
+description: Go 代码模式和内部模块交互规范
+globs: "**/*.go"
+alwaysApply: false
+---
+
+# Go 代码规范
+
+## 模块职责边界
+
+- `internal/feishu/` — 只负责飞书 API 交互，不包含业务逻辑
+- `internal/conversation/` — 会话状态管理和 LLM 调用
+- `internal/handler/` — 转人工业务流程
+- `internal/llm/` — LLM 客户端，定义 `Client` 接口，只暴露 `ExtractInfo`
+- `pkg/models/` — 跨模块共享的数据结构
+- `cmd/bot/` — 组装各模块、消息路由
+
+## LLM 调用规范
+
+```go
+// ✅ 正确：只传当前消息 + 已收集信息
+result, err := m.llm.ExtractInfo(ctx, currentMessage, collectedInfoSnapshot)
+
+// ❌ 错误：传整个对话历史
+result, err := m.llm.AnalyzeConversation(ctx, conv)
+```
+
+## CollectedInfo 合并模式
+
+```go
+// ✅ 正确：只在值变化时更新
+if result.Version != "" && oldInfo["version"] != result.Version {
+    conv.SetCollectedInfo("version", result.Version)
+}
+
+// ❌ 错误：无条件覆盖
+conv.SetCollectedInfo("version", result.Version)
+```
+
+## 消息处理返回值约定
+
+- 普通文本回复 → 返回回复内容字符串
+- 自动转人工 → 返回 `conversation.EscalatePrefix + 用户消息`
+- 空回复 → 返回空字符串（不发送消息）
+
+## 错误处理
+
+```go
+// ✅ 包装错误上抛，附加上下文
+return fmt.Errorf("failed to save conversation: %w", err)
+
+// ❌ 吞掉错误
+_ = store.SaveConversation(ctx, conv)  // 只在非关键路径允许
+```
