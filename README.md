@@ -6,7 +6,7 @@
 
 - **多轮信息收集** — LLM 从每条消息中提取信息，逐步累积，不重复追问
 - **自动提交** — 4 项必填信息收集齐后自动发送到技术支持群
-- **文件转发** — 用户上传的日志文件通过飞书消息转发 API 原样转发到群
+- **文件话题内回复** — 用户上传的日志文件下载后重新上传，以话题内回复（ReplyInThread）方式发到群，摘要和附件在同一话题中
 - **消息去重** — Redis SETNX 原子操作 + 会话级互斥锁，杜绝重复回复
 - **手动转人工** — 用户可随时发送「转人工」强制提交，无论信息是否完整
 - **WebSocket 长连接** — 实时接收飞书消息事件
@@ -67,12 +67,12 @@
 │  ┌──────────────┐                    ┌──────────────┐    │
 │  │ 文本消息处理  │                    │ 文件消息处理  │    │
 │  │              │                    │              │    │
-│  │ 1.添加到对话  │                    │ 1.存 fileKey  │    │
-│  │   历史       │                    │ 2.存 msgID    │    │
-│  │ 2.LLM 提取   │                    │   (转发用)    │    │
-│  │   当前消息    │                    │ 3.添加到对话   │    │
+│  │ 1.添加到对话  │                    │ 1.存 FileInfo │    │
+│  │   历史       │                    │  (msgID+key   │    │
+│  │ 2.LLM 提取   │                    │   +fileName)  │    │
+│  │   当前消息    │                    │ 2.添加到对话   │    │
 │  │   的信息     │                    │   历史        │    │
-│  │ 3.合并到     │                    │ 4.检查完整性   │    │
+│  │ 3.合并到     │                    │ 3.检查完整性   │    │
 │  │   CollectedInfo                   │              │    │
 │  │ 4.检查完整性  │                    │              │    │
 │  └──────┬───────┘                    └──────┬───────┘    │
@@ -92,8 +92,11 @@
 │  │         EscalationHandler (escalate.go)             │  │
 │  │                                                    │  │
 │  │  1. conv.GetInfoSummary() 构建摘要                  │  │
-│  │  2. SendPostMessage → 发送到技术支持群              │  │
-│  │  3. ForwardMessage → 逐条转发文件消息到群            │  │
+│  │  2. SendPostMessage → 发送到群（创建话题根消息）     │  │
+│  │  3. 文件处理（在同一话题内）：                       │  │
+│  │     a. DownloadMessageResource → 下载原始文件       │  │
+│  │     b. UploadFile → 重新上传获取新 fileKey          │  │
+│  │     c. ReplyFileInThread → 话题内回复文件           │  │
 │  │  4. SendTextMessage → 通知用户「已提交」             │  │
 │  │  5. ClearConversation → 清除会话上下文               │  │
 │  └────────────────────────────────────────────────────┘  │
@@ -137,7 +140,7 @@ HandleMessage() → Manager.ProcessMessage()
 | 步骤 | 操作 | 说明 |
 |------|------|------|
 | 1 | 获取会话 | `store.GetOrCreateConversation()` — 从 Redis 读取或创建新会话 |
-| 2 | 分类处理 | 文本消息 → LLM 提取；文件消息 → 存储 fileKey + messageID |
+| 2 | 分类处理 | 文本消息 → LLM 提取；文件消息 → 存储 FileInfo（messageID + fileKey + fileName） |
 | 3 | LLM 提取 | `llm.ExtractInfo(当前消息, 已收集信息)` — 只从当前这一条消息中提取 |
 | 4 | 合并信息 | 新提取的字段合并到 `conv.CollectedInfo`，跳过已存在的相同值 |
 | 5 | 完整性判断 | `conv.IsInfoComplete()` — 4 项都有则触发自动转人工 |
@@ -165,11 +168,12 @@ HandleEscalation() / 自动触发 → EscalationHandler.HandleEscalation()
 | 步骤 | 操作 | 说明 |
 |------|------|------|
 | 1 | 构建摘要 | `conv.GetInfoSummary()` — 代码直接生成，不依赖 LLM |
-| 2 | 发送摘要 | `SendPostMessage()` → 富文本消息发到技术支持群 |
-| 3 | 转发文件 | `ForwardMessage(msgID, groupID)` — 逐条转发用户上传的文件 |
-| 4 | 降级兜底 | 如果转发失败，尝试 `SendFileMessage(fileKey)` 直接发送 |
-| 5 | 通知用户 | 发送「已提交」确认消息 |
-| 6 | 清除会话 | `ClearConversation()` — 防止重复提交 |
+| 2 | 发送摘要 | `SendPostMessage()` → 富文本消息发到技术支持群，创建话题根消息，返回 `rootMsgID` |
+| 3 | 下载文件 | `DownloadMessageResource(msgID, fileKey)` — 从用户私聊消息中下载文件二进制数据 |
+| 4 | 重新上传 | `UploadFile(fileName, data)` — 重新上传获取新的 `fileKey`（私聊 fileKey 不可跨聊天使用） |
+| 5 | 话题内回复 | `ReplyFileInThread(rootMsgID, newFileKey)` — 在摘要消息的同一话题内发送文件附件 |
+| 6 | 通知用户 | 发送「已提交」确认消息 |
+| 7 | 清除会话 | `ClearConversation()` — 防止重复提交 |
 
 ### 5. 消息去重机制
 

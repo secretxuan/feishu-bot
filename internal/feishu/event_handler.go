@@ -43,7 +43,31 @@ func (e *EventHandlers) SetFeishuClient(client *Client) {
 // RegisterHandlers 注册所有事件处理器。
 func (e *EventHandlers) RegisterHandlers() *dispatcher.EventDispatcher {
 	return dispatcher.NewEventDispatcher("", "").
-		OnP2MessageReceiveV1(e.handlePrivateMessage)
+		OnP2MessageReceiveV1(e.handlePrivateMessage).
+		OnP1P2PChatCreatedV1(e.handleP2PChatCreated)
+}
+
+// handleP2PChatCreated 处理用户首次打开机器人对话事件。
+func (e *EventHandlers) handleP2PChatCreated(ctx context.Context, event *larkim.P1P2PChatCreatedV1) error {
+	chatID := ""
+	userID := ""
+	if event.Event != nil {
+		chatID = event.Event.ChatID
+		if event.Event.User != nil {
+			userID = event.Event.User.OpenId
+		}
+	}
+	log.Printf("[Event] New p2p chat created: chatID=%s, userID=%s", chatID, userID)
+
+	// 发送欢迎消息
+	if chatID != "" && e.feishuClient != nil {
+		welcome := "您好，我是技术支持助手。\n\n为了帮您处理问题，请提供以下信息：\n- 版本信息\n- 设备信息\n- 用户信息\n- 问题描述\n\n您可以一次性告诉我，也可以分多次发送。\n如有日志文件，可直接发送附件。"
+		if err := e.feishuClient.SendTextMessage(ctx, chatID, welcome); err != nil {
+			log.Printf("[Event] Failed to send welcome message: %v", err)
+		}
+	}
+
+	return nil
 }
 
 // getChatLock 获取指定 chatID 的互斥锁（懒初始化）。

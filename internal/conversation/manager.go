@@ -91,12 +91,18 @@ func (m *Manager) ProcessMessage(ctx context.Context, chatID, senderID, senderNa
 
 // handleFileMessage 处理文件类消息。
 func (m *Manager) handleFileMessage(ctx context.Context, conv *models.Conversation, content, fileKey, messageID string) (string, error) {
-	// 记录文件信息
-	if fileKey != "" {
-		conv.SetLogFileKey(fileKey)
-	}
-	if messageID != "" {
-		conv.AddFileMessageID(messageID)
+	// 记录文件信息（messageID + fileKey + 文件名）
+	if fileKey != "" && messageID != "" {
+		// 从 content 中提取文件名（格式: "上传了文件: xxx.zip"）
+		fileName := "attachment"
+		if strings.HasPrefix(content, "上传了文件: ") {
+			fileName = strings.TrimPrefix(content, "上传了文件: ")
+		}
+		conv.AddFile(models.FileInfo{
+			MessageID: messageID,
+			FileKey:   fileKey,
+			FileName:  fileName,
+		})
 	}
 
 	conv.AddMessage("user", content)

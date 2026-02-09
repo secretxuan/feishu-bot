@@ -195,8 +195,8 @@ func (c *Client) ForwardMessage(ctx context.Context, messageID, targetChatID str
 	return nil
 }
 
-// SendPostMessage 发送富文本（post）消息到指定聊天。
-func (c *Client) SendPostMessage(ctx context.Context, chatID, title, textContent string) error {
+// SendPostMessage 发送富文本（post）消息到指定聊天，返回消息ID（用于话题内回复）。
+func (c *Client) SendPostMessage(ctx context.Context, chatID, title, textContent string) (string, error) {
 	log.Printf("[Feishu] SendPostMessage: chatID=%s, title=%s", chatID, title)
 
 	postContent := map[string]interface{}{
@@ -215,7 +215,7 @@ func (c *Client) SendPostMessage(ctx context.Context, chatID, title, textContent
 
 	contentBytes, err := json.Marshal(postContent)
 	if err != nil {
-		return fmt.Errorf("failed to marshal post content: %w", err)
+		return "", fmt.Errorf("failed to marshal post content: %w", err)
 	}
 
 	req := larkim.NewCreateMessageReqBuilder().
@@ -229,15 +229,79 @@ func (c *Client) SendPostMessage(ctx context.Context, chatID, title, textContent
 
 	resp, err := c.larkCli.Im.Message.Create(ctx, req)
 	if err != nil {
-		return fmt.Errorf("failed to send post message: %w", err)
+		return "", fmt.Errorf("failed to send post message: %w", err)
 	}
 
 	if !resp.Success() {
-		return fmt.Errorf("send post failed: code=%d, msg=%s", resp.Code, resp.Msg)
+		return "", fmt.Errorf("send post failed: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
-	log.Printf("[Feishu] Post message sent successfully")
+	// 提取消息ID，用于后续在同一话题内回复文件
+	msgID := ""
+	if resp.Data != nil && resp.Data.MessageId != nil {
+		msgID = *resp.Data.MessageId
+	}
+
+	log.Printf("[Feishu] Post message sent successfully, msgID=%s", msgID)
+	return msgID, nil
+}
+
+// ReplyFileInThread 在话题内回复文件（将文件放入与摘要同一话题中）。
+func (c *Client) ReplyFileInThread(ctx context.Context, parentMsgID, fileKey string) error {
+	log.Printf("[Feishu] ReplyFileInThread: parentMsg=%s, fileKey=%s", parentMsgID, fileKey)
+
+	content := fmt.Sprintf(`{"file_key":"%s"}`, fileKey)
+
+	req := larkim.NewReplyMessageReqBuilder().
+		MessageId(parentMsgID).
+		Body(larkim.NewReplyMessageReqBodyBuilder().
+			Content(content).
+			MsgType(larkim.MsgTypeFile).
+			ReplyInThread(true).
+			Build()).
+		Build()
+
+	resp, err := c.larkCli.Im.Message.Reply(ctx, req)
+	if err != nil {
+		return fmt.Errorf("failed to reply file in thread: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("reply file in thread failed: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	log.Printf("[Feishu] File replied in thread successfully")
 	return nil
+}
+
+// DownloadMessageResource 下载消息中的文件资源（返回文件数据和文件名）。
+func (c *Client) DownloadMessageResource(ctx context.Context, messageID, fileKey, resourceType string) ([]byte, string, error) {
+	log.Printf("[Feishu] DownloadMessageResource: msgID=%s, fileKey=%s, type=%s", messageID, fileKey, resourceType)
+
+	req := larkim.NewGetMessageResourceReqBuilder().
+		MessageId(messageID).
+		FileKey(fileKey).
+		Type(resourceType).
+		Build()
+
+	resp, err := c.larkCli.Im.MessageResource.Get(ctx, req)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to download resource: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, "", fmt.Errorf("download resource failed: code=%d", resp.Code)
+	}
+
+	// 读取文件内容
+	data, err := io.ReadAll(resp.File)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to read resource data: %w", err)
+	}
+
+	fileName := resp.FileName
+	log.Printf("[Feishu] Downloaded resource: %d bytes, fileName=%s", len(data), fileName)
+	return data, fileName, nil
 }
 
 // GetMessage 获取消息详情。

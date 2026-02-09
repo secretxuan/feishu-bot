@@ -2,6 +2,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"log"
 
@@ -23,40 +24,28 @@ func NewEscalationHandler(client *feishu.Client, escalationGroupID string) *Esca
 	}
 }
 
-// HandleEscalation 处理转人工请求：发送摘要到群组，转发文件，通知用户。
+// HandleEscalation 处理转人工请求：发送摘要到群组话题，在同一话题内回复文件，通知用户。
 func (h *EscalationHandler) HandleEscalation(ctx context.Context, conv *models.Conversation) error {
 	log.Printf("[Escalation] Processing for chat %s, user %s", conv.ChatID, conv.SenderID)
 
-	// 1. 构建并发送摘要到群组
+	// 1. 发送摘要到群组（创建话题根消息）
 	summary := conv.GetInfoSummary()
 	log.Printf("[Escalation] Sending summary to group %s", h.escalationGroupID)
 
-	if err := h.feishuClient.SendPostMessage(ctx, h.escalationGroupID, "用户支持请求", summary); err != nil {
+	rootMsgID, err := h.feishuClient.SendPostMessage(ctx, h.escalationGroupID, "用户支持请求", summary)
+	if err != nil {
 		log.Printf("[Escalation] Failed to send summary: %v", err)
 		return err
 	}
-	log.Printf("[Escalation] Summary sent successfully")
+	log.Printf("[Escalation] Summary sent, rootMsgID=%s", rootMsgID)
 
-	// 2. 转发文件消息到群组
-	fileForwarded := false
-	for _, msgID := range conv.FileMessageIDs {
-		log.Printf("[Escalation] Forwarding file message %s to group", msgID)
-		if err := h.feishuClient.ForwardMessage(ctx, msgID, h.escalationGroupID); err != nil {
-			log.Printf("[Escalation] Forward failed for %s: %v", msgID, err)
-			// 转发失败不影响整体流程
-		} else {
-			log.Printf("[Escalation] File message %s forwarded successfully", msgID)
-			fileForwarded = true
-		}
-	}
-
-	// 如果没有成功转发任何消息但有 fileKey，尝试直接发送文件
-	if !fileForwarded && conv.LogFileKey != "" {
-		log.Printf("[Escalation] Trying to send file directly with fileKey: %s", conv.LogFileKey)
-		if err := h.feishuClient.SendFileMessage(ctx, h.escalationGroupID, conv.LogFileKey); err != nil {
-			log.Printf("[Escalation] Direct file send also failed: %v", err)
-		} else {
-			log.Printf("[Escalation] File sent directly via fileKey")
+	// 2. 在同一话题内回复文件（下载 → 重新上传 → 话题内回复）
+	if conv.HasFiles() && rootMsgID != "" {
+		for _, f := range conv.Files {
+			if err := h.forwardFileInThread(ctx, rootMsgID, f); err != nil {
+				log.Printf("[Escalation] File thread reply failed for %s: %v", f.FileName, err)
+				// 单个文件失败不影响整体流程，继续处理下一个文件
+			}
 		}
 	}
 
@@ -67,6 +56,43 @@ func (h *EscalationHandler) HandleEscalation(ctx context.Context, conv *models.C
 	}
 
 	log.Printf("[Escalation] Completed for chat %s", conv.ChatID)
+	return nil
+}
+
+// forwardFileInThread 将用户上传的文件下载后重新上传，然后在话题内回复。
+func (h *EscalationHandler) forwardFileInThread(ctx context.Context, rootMsgID string, f models.FileInfo) error {
+	log.Printf("[Escalation] Forwarding file %s in thread (parentMsg=%s)", f.FileName, rootMsgID)
+
+	// Step 1: 从原始消息下载文件
+	data, downloadedName, err := h.feishuClient.DownloadMessageResource(ctx, f.MessageID, f.FileKey, "file")
+	if err != nil {
+		return err
+	}
+
+	// 使用下载到的文件名，如果为空则用记录的文件名
+	fileName := downloadedName
+	if fileName == "" {
+		fileName = f.FileName
+	}
+	if fileName == "" {
+		fileName = "attachment"
+	}
+
+	log.Printf("[Escalation] Downloaded file: %s (%d bytes)", fileName, len(data))
+
+	// Step 2: 重新上传文件获取新的 fileKey
+	newFileKey, err := h.feishuClient.UploadFile(ctx, fileName, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	log.Printf("[Escalation] Re-uploaded file, new fileKey=%s", newFileKey)
+
+	// Step 3: 在话题内回复文件
+	if err := h.feishuClient.ReplyFileInThread(ctx, rootMsgID, newFileKey); err != nil {
+		return err
+	}
+
+	log.Printf("[Escalation] File %s replied in thread successfully", fileName)
 	return nil
 }
 

@@ -30,8 +30,9 @@ feishu-bot/
 │   │
 │   ├── feishu/
 │   │   ├── client.go                  # 飞书 API 客户端：封装 lark SDK，提供 SendTextMessage /
-│   │                                  # SendPostMessage / SendFileMessage / ForwardMessage /
-│   │                                  # ReplyMessage / UploadFile / GetMessage 等方法
+│   │                                  # SendPostMessage（返回 msgID）/ SendFileMessage /
+│   │                                  # ForwardMessage / ReplyMessage / ReplyFileInThread /
+│   │                                  # UploadFile / DownloadMessageResource / GetMessage 等方法
 │   │   ├── event_handler.go           # 飞书事件处理器：WebSocket 事件入口，实现原子去重
 │   │                                  # (SETNX) + 会话级互斥锁 (sync.Map)，提取消息内容，
 │   │                                  # 分发到 MessageHandler
@@ -40,8 +41,9 @@ feishu-bot/
 │   │                                  # 当前未在主流程中使用，保留供后续扩展
 │   │
 │   ├── handler/
-│   │   └── escalate.go                # 转人工处理器：构建信息摘要发送到群组，通过 ForwardMessage
-│   │                                  # 转发用户文件，通知用户提交成功
+│   │   └── escalate.go                # 转人工处理器：构建信息摘要发送到群组（创建话题），
+│   │                                  # 下载用户文件后重新上传并在同一话题内回复（ReplyInThread），
+│   │                                  # 确保摘要和附件在同一个话题中；通知用户提交成功
 │   │
 │   └── llm/
 │       └── client.go                  # LLM 客户端：定义 Client 接口 (ExtractInfo)，实现
@@ -50,8 +52,8 @@ feishu-bot/
 │
 ├── pkg/
 │   └── models/
-│       └── types.go                   # 公共数据结构：Message / Conversation / RequiredFields 定义；
-│                                      # Conversation 提供 CollectedInfo 管理、FileMessageIDs 管理、
+│       └── types.go                   # 公共数据结构：Message / FileInfo / Conversation / RequiredFields 定义；
+│                                      # Conversation 提供 CollectedInfo 管理、Files []FileInfo 管理、
 │                                      # IsInfoComplete / GetMissingFields / GetInfoSummary 等方法
 │
 ├── configs/

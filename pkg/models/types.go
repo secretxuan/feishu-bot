@@ -14,6 +14,13 @@ type Message struct {
 	Timestamp int64  `json:"timestamp"`
 }
 
+// FileInfo 表示用户上传的文件信息。
+type FileInfo struct {
+	MessageID string `json:"message_id"` // 原始消息ID（用于下载文件）
+	FileKey   string `json:"file_key"`   // 文件的 fileKey
+	FileName  string `json:"file_name"`  // 文件名
+}
+
 // RequiredFields 定义需要收集的 4 项必填信息。
 var RequiredFields = []struct {
 	Key  string
@@ -33,9 +40,8 @@ type Conversation struct {
 	Messages   []Message `json:"messages"`
 
 	// 信息收集状态
-	CollectedInfo  map[string]string `json:"collected_info,omitempty"`   // 已收集的信息
-	LogFileKey     string            `json:"log_file_key,omitempty"`     // 日志文件 fileKey
-	FileMessageIDs []string          `json:"file_message_ids,omitempty"` // 文件消息ID列表，用于转发
+	CollectedInfo map[string]string `json:"collected_info,omitempty"` // 已收集的信息
+	Files         []FileInfo        `json:"files,omitempty"`          // 用户上传的文件列表
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -69,26 +75,15 @@ func (c *Conversation) GetCollectedInfo(key string) (string, bool) {
 	return val, ok
 }
 
-// SetLogFileKey 设置日志文件的 fileKey。
-func (c *Conversation) SetLogFileKey(fileKey string) {
-	c.LogFileKey = fileKey
+// AddFile 添加用户上传的文件信息。
+func (c *Conversation) AddFile(f FileInfo) {
+	c.Files = append(c.Files, f)
 	c.UpdatedAt = time.Now()
 }
 
-// HasLogFile 检查是否有日志文件。
-func (c *Conversation) HasLogFile() bool {
-	return c.LogFileKey != ""
-}
-
-// AddFileMessageID 添加文件消息ID（用于后续转发到群）。
-func (c *Conversation) AddFileMessageID(messageID string) {
-	c.FileMessageIDs = append(c.FileMessageIDs, messageID)
-	c.UpdatedAt = time.Now()
-}
-
-// HasFileMessages 检查是否有文件消息。
-func (c *Conversation) HasFileMessages() bool {
-	return len(c.FileMessageIDs) > 0
+// HasFiles 检查是否有用户上传的文件。
+func (c *Conversation) HasFiles() bool {
+	return len(c.Files) > 0
 }
 
 // IsInfoComplete 检查是否所有必填信息都已收集。
@@ -137,8 +132,8 @@ func (c *Conversation) GetInfoSummary() string {
 		}
 	}
 
-	if c.HasLogFile() || c.HasFileMessages() {
-		sb.WriteString("\n日志文件: 已上传（见附件）\n")
+	if c.HasFiles() {
+		sb.WriteString("\n日志文件: 已上传（见话题内附件）\n")
 	}
 
 	return sb.String()
@@ -153,7 +148,7 @@ func (c *Conversation) GetUserSummary() string {
 			sb.WriteString(fmt.Sprintf("- %s: %s\n", field.Name, val))
 		}
 	}
-	if c.HasLogFile() || c.HasFileMessages() {
+	if c.HasFiles() {
 		sb.WriteString("- 日志文件: 已上传\n")
 	}
 
