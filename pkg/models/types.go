@@ -7,6 +7,15 @@ import (
 	"time"
 )
 
+// ConversationMode 表示会话模式。
+type ConversationMode string
+
+const (
+	ModeUnknown    ConversationMode = ""           // 未确定模式
+	ModeIssue      ConversationMode = "issue"      // 问题反馈模式
+	ModeSuggestion ConversationMode = "suggestion" // 建议反馈模式
+)
+
 // Message 表示聊天消息。
 type Message struct {
 	Role      string `json:"role"` // "user" or "assistant"
@@ -21,17 +30,22 @@ type FileInfo struct {
 	FileName  string `json:"file_name"`  // 文件名
 }
 
-// RequiredFields 定义需要收集的 7 项必填信息。
+// RequiredFields 定义问题反馈模式需要收集的 11 项必填信息（中英双语）。
 var RequiredFields = []struct {
 	Key  string
 	Name string
 }{
-	{"app_version", "App版本"},
-	{"glasses_version", "眼镜版本"},
-	{"ring_version", "戒指版本"},
-	{"device", "设备信息"},
-	{"user", "用户信息（SN号）"},
-	{"issue", "问题描述"},
+	{"issue", "问题描述 / Issue Description"},
+	{"occur_time", "发生时间 / Time of Occurrence"},
+	{"reproducible", "是否必现 / Reproducible?"},
+	{"vpn", "是否使用VPN / Using VPN?"},
+	{"app_version", "应用版本 / App Version"},
+	{"glasses_version", "眼镜版本 / Glasses Firmware"},
+	{"glasses_sn", "眼镜SN号 / Glasses SN"},
+	{"ring_version", "戒指版本 / Ring Firmware"},
+	{"ring_sn", "戒指SN号 / Ring SN"},
+	{"phone_model", "手机型号 / Phone Model"},
+	{"phone_os", "手机系统版本 / Phone OS Version"},
 }
 
 // Conversation 表示用户会话。
@@ -41,9 +55,15 @@ type Conversation struct {
 	SenderName string    `json:"sender_name"`
 	Messages   []Message `json:"messages"`
 
+	// 会话模式
+	Mode ConversationMode `json:"mode,omitempty"` // issue / suggestion
+
 	// 信息收集状态
 	CollectedInfo map[string]string `json:"collected_info,omitempty"` // 已收集的信息
 	Files         []FileInfo        `json:"files,omitempty"`          // 用户上传的文件列表
+
+	// 建议内容（建议模式下使用）
+	SuggestionText string `json:"suggestion_text,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -88,7 +108,7 @@ func (c *Conversation) HasFiles() bool {
 	return len(c.Files) > 0
 }
 
-// IsInfoComplete 检查是否所有必填信息都已收集。
+// IsInfoComplete 检查是否所有必填信息都已收集（仅在问题反馈模式下使用）。
 func (c *Conversation) IsInfoComplete() bool {
 	if c.CollectedInfo == nil {
 		return false
@@ -121,18 +141,24 @@ func (c *Conversation) GetMissingFields() []string {
 func (c *Conversation) GetInfoSummary() string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("提交时间: %s\n\n", c.UpdatedAt.Format("2006-01-02 15:04:05")))
+	sb.WriteString(fmt.Sprintf("提交时间 / Submitted: %s\n", c.UpdatedAt.Format("2006-01-02 15:04:05")))
 
-	for _, field := range RequiredFields {
-		if val, ok := c.CollectedInfo[field.Key]; ok && val != "" {
-			sb.WriteString(fmt.Sprintf("%s: %s\n", field.Name, val))
-		} else {
-			sb.WriteString(fmt.Sprintf("%s: 未提供\n", field.Name))
+	if c.Mode == ModeSuggestion {
+		sb.WriteString("类型 / Type: 建议反馈 / Suggestion\n\n")
+		sb.WriteString(fmt.Sprintf("内容 / Content: %s\n", c.SuggestionText))
+	} else {
+		sb.WriteString("类型 / Type: 问题反馈 / Issue Report\n\n")
+		for _, field := range RequiredFields {
+			if val, ok := c.CollectedInfo[field.Key]; ok && val != "" {
+				sb.WriteString(fmt.Sprintf("%s: %s\n", field.Name, val))
+			} else {
+				sb.WriteString(fmt.Sprintf("%s: 未提供 / Not provided\n", field.Name))
+			}
 		}
 	}
 
 	if c.HasFiles() {
-		sb.WriteString("\n日志文件: 已上传（见话题内附件）\n")
+		sb.WriteString("\n日志文件 / Log files: 已上传（见话题内附件）/ Uploaded (see attachments in thread)\n")
 	}
 
 	return sb.String()
@@ -142,13 +168,17 @@ func (c *Conversation) GetInfoSummary() string {
 func (c *Conversation) GetUserSummary() string {
 	var sb strings.Builder
 
-	for _, field := range RequiredFields {
-		if val, ok := c.CollectedInfo[field.Key]; ok && val != "" {
-			sb.WriteString(fmt.Sprintf("- %s: %s\n", field.Name, val))
+	if c.Mode == ModeSuggestion {
+		sb.WriteString(fmt.Sprintf("- 建议内容 / Suggestion: %s\n", c.SuggestionText))
+	} else {
+		for _, field := range RequiredFields {
+			if val, ok := c.CollectedInfo[field.Key]; ok && val != "" {
+				sb.WriteString(fmt.Sprintf("- %s: %s\n", field.Name, val))
+			}
 		}
 	}
 	if c.HasFiles() {
-		sb.WriteString("- 日志文件: 已上传\n")
+		sb.WriteString("- 日志文件 / Log files: 已上传 / Uploaded\n")
 	}
 
 	return sb.String()

@@ -18,8 +18,8 @@ feishu-bot/
 │   │
 │   ├── conversation/
 │   │   ├── manager.go                 # 会话管理核心：ProcessMessage 处理用户消息，调用 LLM 提取信息，
-│   │                                  # 合并到 CollectedInfo，判断完整性，构建智能回复；
-│   │                                  # 定义 EscalatePrefix 常量用于触发自动转人工
+│   │                                  # 合并到 CollectedInfo，判断完整性，构建中英双语智能回复；
+│   │                                  # 支持中英文建议/反馈触发词；定义 EscalatePrefix 常量
 │   │   ├── store.go                   # Redis 存储层：会话的 CRUD 操作、TryMarkMessageProcessed
 │   │                                  # (SETNX 原子去重)、会话过期管理
 │   │   ├── collector.go               # 信息收集器（备用）：基于规则的本地信息提取，定义 InfoType
@@ -48,19 +48,18 @@ feishu-bot/
 │   │
 │   └── llm/
 │       └── client.go                  # LLM 客户端：定义 Client 接口 (ExtractInfo)，实现
-│                                      # OpenAI 兼容的信息提取；从用户单条消息中提取 app_version /
-│                                      # glasses_version / ring_version / device / user / issue
-│                                      # 六个字段，不依赖对话历史
+│                                      # OpenAI 兼容的信息提取；英文 System Prompt 支持中英文用户输入；
+│                                      # 从用户单条消息中提取 11 个字段，中英双语字段名
 │
 ├── pkg/
 │   └── models/
-│       └── types.go                   # 公共数据结构：Message / FileInfo / Conversation / RequiredFields 定义；
-│                                      # Conversation 提供 CollectedInfo 管理、Files []FileInfo 管理、
-│                                      # IsInfoComplete / GetMissingFields / GetInfoSummary 等方法
+│       └── types.go                   # 公共数据结构：Message / FileInfo / Conversation / ConversationMode /
+│                                      # RequiredFields(11项，中英双语名称) 定义；支持问题反馈和建议反馈
+│                                      # 两种模式；GetInfoSummary / GetUserSummary 输出中英双语摘要
 │
 ├── configs/
 │   └── config.yaml                    # 应用配置文件：飞书凭证、LLM 配置、Redis 连接、
-│                                      # 转人工关键词、清除上下文关键词
+│                                      # 中英文转人工关键词、中英文清除上下文关键词
 │
 ├── Dockerfile                         # 多阶段 Docker 构建：golang:alpine 编译 → alpine 运行
 ├── docker-compose.yml                 # Docker Compose 编排：bot + Redis 服务，健康检查依赖

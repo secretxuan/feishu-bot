@@ -61,7 +61,24 @@ func (e *EventHandlers) handleP2PChatCreated(ctx context.Context, event *larkim.
 
 	// 发送欢迎消息
 	if chatID != "" && e.feishuClient != nil {
-		welcome := "您好，我是技术支持助手。\n\n为了帮您处理问题，请提供以下信息：\n- App版本\n- 眼镜版本\n- 戒指版本\n- 设备信息\n- 用户信息（SN号）\n- 问题描述\n\n您可以一次性告诉我，也可以分多次发送。\n如有日志文件，可直接发送附件。"
+		welcome := "您好，我是技术支持助手。/ Hi, I'm the tech support assistant.\n\n" +
+			"📋 反馈问题，请提供以下信息 / To report an issue, please provide:\n" +
+			"  - 问题描述 / Issue Description\n" +
+			"  - 发生时间 / Time of Occurrence\n" +
+			"  - 是否必现 / Reproducible?\n" +
+			"  - 是否使用VPN / Using VPN?\n" +
+			"  - 应用版本 / App Version\n" +
+			"  - 眼镜版本 / Glasses Firmware\n" +
+			"  - 眼镜SN号 / Glasses SN\n" +
+			"  - 戒指版本 / Ring Firmware\n" +
+			"  - 戒指SN号 / Ring SN\n" +
+			"  - 手机型号 / Phone Model\n" +
+			"  - 手机系统版本 / Phone OS Version\n\n" +
+			"💡 反馈建议，请直接发送 / To submit a suggestion, send:\n" +
+			"  反馈：您的内容 / feedback: your content\n" +
+			"  建议：您的内容 / suggestion: your content\n\n" +
+			"您可以一次性告诉我，也可以分多次发送。\nYou can provide all info at once or send it in multiple messages.\n" +
+			"如有日志文件，可直接发送附件。\nIf you have log files, feel free to send them as attachments."
 		if err := e.feishuClient.SendTextMessage(ctx, chatID, welcome); err != nil {
 			log.Printf("[Event] Failed to send welcome message: %v", err)
 		}

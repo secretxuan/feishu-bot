@@ -146,7 +146,7 @@ func (h *wrappedMessageHandler) HandleMessage(ctx context.Context, chatID, sende
 	response, err := h.conversationManager.ProcessMessage(ctx, chatID, senderID, "", content, msgType, fileKey, messageID)
 	if err != nil {
 		log.Printf("[Handler] ProcessMessage failed: %v", err)
-		_ = h.feishuClient.ReplyMessage(ctx, messageID, "抱歉，处理您的消息时出错了，请稍后重试。")
+		_ = h.feishuClient.ReplyMessage(ctx, messageID, "抱歉，处理您的消息时出错了，请稍后重试。\nSorry, an error occurred. Please try again later.")
 		return err
 	}
 
@@ -180,19 +180,19 @@ func (h *wrappedMessageHandler) doEscalation(ctx context.Context, chatID, sender
 	conv, err := h.conversationManager.GetConversation(ctx, chatID)
 	if err != nil {
 		log.Printf("[Escalation] Failed to get conversation: %v", err)
-		_ = h.feishuClient.SendTextMessage(ctx, chatID, "抱歉，获取会话信息失败，请稍后重试。")
+		_ = h.feishuClient.SendTextMessage(ctx, chatID, "抱歉，获取会话信息失败，请稍后重试。\nSorry, failed to retrieve session info. Please try again later.")
 		return err
 	}
 
 	if conv == nil {
-		_ = h.feishuClient.SendTextMessage(ctx, chatID, "请先描述您的问题，我会帮您收集必要信息。")
+		_ = h.feishuClient.SendTextMessage(ctx, chatID, "请先描述您的问题，我会帮您收集必要信息。\nPlease describe your issue first. I'll help collect the necessary info.")
 		return nil
 	}
 
 	// 直接执行转人工，不再重新检查 LLM
 	if err := h.escalationHandler.HandleEscalation(ctx, conv); err != nil {
 		log.Printf("[Escalation] HandleEscalation failed: %v", err)
-		_ = h.feishuClient.SendTextMessage(ctx, chatID, "提交失败，请稍后重试。")
+		_ = h.feishuClient.SendTextMessage(ctx, chatID, "提交失败，请稍后重试。\nSubmission failed. Please try again later.")
 		return err
 	}
 
@@ -209,9 +209,9 @@ func (h *wrappedMessageHandler) handleClearContext(ctx context.Context, chatID s
 
 	if err := h.conversationManager.ClearConversation(ctx, chatID); err != nil {
 		log.Printf("[Clear] Failed: %v", err)
-		_ = h.feishuClient.SendTextMessage(ctx, chatID, "抱歉，清除上下文时出错了。")
+		_ = h.feishuClient.SendTextMessage(ctx, chatID, "抱歉，清除上下文时出错了。\nSorry, failed to clear the context.")
 		return err
 	}
 
-	return h.feishuClient.SendTextMessage(ctx, chatID, "上下文已清除，请重新开始描述您的问题。")
+	return h.feishuClient.SendTextMessage(ctx, chatID, "上下文已清除，请重新开始描述您的问题。\nContext cleared. Please start describing your issue again.")
 }

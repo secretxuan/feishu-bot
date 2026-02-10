@@ -19,12 +19,39 @@ type Client interface {
 
 // ExtractionResult 表示从单条消息中提取的信息。
 type ExtractionResult struct {
-	AppVersion     string `json:"app_version"`
-	GlassesVersion string `json:"glasses_version"`
-	RingVersion    string `json:"ring_version"`
-	Device         string `json:"device"`
-	User           string `json:"user"`
-	Issue          string `json:"issue"`
+	Issue          string `json:"issue"`           // 问题描述
+	OccurTime      string `json:"occur_time"`      // 发生时间
+	Reproducible   string `json:"reproducible"`    // 是否必现
+	VPN            string `json:"vpn"`             // 是否使用VPN
+	AppVersion     string `json:"app_version"`     // 应用版本
+	GlassesVersion string `json:"glasses_version"` // 眼镜版本
+	GlassesSN      string `json:"glasses_sn"`      // 眼镜SN号
+	RingVersion    string `json:"ring_version"`    // 戒指版本
+	RingSN         string `json:"ring_sn"`         // 戒指SN号
+	PhoneModel     string `json:"phone_model"`     // 手机型号
+	PhoneOS        string `json:"phone_os"`        // 手机系统版本
+}
+
+// AllFieldKeys 返回所有字段的 key 列表（与 JSON tag 一致）。
+var AllFieldKeys = []string{
+	"issue", "occur_time", "reproducible", "vpn",
+	"app_version", "glasses_version", "glasses_sn",
+	"ring_version", "ring_sn", "phone_model", "phone_os",
+}
+
+// FieldDisplayNames 字段 key → 中英双语显示名称。
+var FieldDisplayNames = map[string]string{
+	"issue":           "问题描述 / Issue Description",
+	"occur_time":      "发生时间 / Time of Occurrence",
+	"reproducible":    "是否必现 / Reproducible?",
+	"vpn":             "是否使用VPN / Using VPN?",
+	"app_version":     "应用版本 / App Version",
+	"glasses_version": "眼镜版本 / Glasses Firmware",
+	"glasses_sn":      "眼镜SN号 / Glasses SN",
+	"ring_version":    "戒指版本 / Ring Firmware",
+	"ring_sn":         "戒指SN号 / Ring SN",
+	"phone_model":     "手机型号 / Phone Model",
+	"phone_os":        "手机系统版本 / Phone OS Version",
 }
 
 // ProviderConfig LLM 提供商配置。
@@ -67,29 +94,36 @@ func NewOpenAICompatibleClient(baseURL, apiKey, model string) (*OpenAICompatible
 	}, nil
 }
 
-const systemPrompt = `你是一个技术支持信息收集助手。你的唯一任务是从用户的【当前这一条消息】中提取以下六项信息。
+const systemPrompt = `You are a tech support information collector. Your ONLY task is to extract the following 11 fields from the user's CURRENT message. The user may write in Chinese or English — handle both languages.
 
-需要收集的信息：
-1. app_version - App 版本号（如 v1.2.3、2.0.6 等，指手机 App 的版本）
-2. glasses_version - 眼镜固件版本（如 v1.0、G2 1.2.0 等，指智能眼镜的版本/型号）
-3. ring_version - 戒指固件版本（如 R1 1.0、v2.1 等，指智能戒指的版本/型号）
-4. device - 设备型号和操作系统（如 iPhone 15/iOS 17、安卓机、华为 Mate60 等）
-5. user - 用户标识，通常是 SN 号（如 S200nnnnnnn、SN12345 等）
-6. issue - 遇到的具体问题描述（如 断开连接、无法登录、页面崩溃 等）
+Fields to collect:
+1. issue - Problem description (what happened, what the user was doing before the issue)
+2. occur_time - Time of occurrence (e.g. "today 3pm", "2026-02-09 14:00", "今天下午3点")
+3. reproducible - Is it reproducible? (e.g. "yes", "no", "sometimes", "是", "否", "偶现")
+4. vpn - Using VPN? If yes, specify region/node (e.g. "no", "yes, US node", "否", "是，香港节点")
+5. app_version - App version number (e.g. 2.0.6, v1.2.3)
+6. glasses_version - Glasses firmware version (e.g. 1.2.0, v2.1)
+7. glasses_sn - Glasses serial number (e.g. G2xxxxxxx, SN12345)
+8. ring_version - Ring firmware version (e.g. 1.0, v2.1)
+9. ring_sn - Ring serial number (e.g. R1xxxxxxx, SN67890)
+10. phone_model - Phone model (e.g. iPhone 15 Pro, Xiaomi 14, Samsung Galaxy S24)
+11. phone_os - Phone OS version (e.g. Android 15, iOS 18.3.2)
 
-严格规则：
-- 只从用户当前这一条消息中提取新信息
-- 如果用户这条消息没有明确提到某项信息，该字段必须返回空字符串 ""
-- 不要从"当前已收集信息"中复制任何内容到结果中
-- 不要把问候语（如"你好"、"请问"）当作任何信息
-- 不要猜测或编造信息
-- 如果用户纠正了之前的信息（如"版本不对，应该是v3.0"），返回新值
-- 注意区分 App 版本、眼镜版本、戒指版本：如果用户说"版本2.0.6"且没有指定是哪个，默认归为 app_version
-- 如果用户提到 G2、R1 等设备名称，这些是产品型号而非版本号，注意区分
-- 信息要简洁准确
+Strict rules:
+- Extract ONLY from the user's current message
+- If a field is not mentioned, return empty string ""
+- Do NOT copy from "already collected info"
+- Do NOT treat greetings ("hi", "hello", "你好") as any info
+- Do NOT guess or fabricate info
+- If the user corrects previous info (e.g. "wrong version, it's v3.0"), return the new value
+- Distinguish between app version vs glasses/ring firmware version
+- Distinguish between glasses SN vs ring SN
+- Distinguish between phone model (hardware) vs phone OS (software)
+- Keep extracted values concise and accurate
+- Preserve the user's original language in the extracted values
 
-返回严格的 JSON 格式，不要有其他任何文字：
-{"app_version": "", "glasses_version": "", "ring_version": "", "device": "", "user": "", "issue": ""}`
+Return strict JSON only, no other text:
+{"issue": "", "occur_time": "", "reproducible": "", "vpn": "", "app_version": "", "glasses_version": "", "glasses_sn": "", "ring_version": "", "ring_sn": "", "phone_model": "", "phone_os": ""}`
 
 // ExtractInfo 从用户的单条消息中提取信息。
 func (c *OpenAICompatibleClient) ExtractInfo(ctx context.Context, userMessage string, collectedInfo map[string]string) (*ExtractionResult, error) {
@@ -102,23 +136,16 @@ func (c *OpenAICompatibleClient) ExtractInfo(ctx context.Context, userMessage st
 
 	// 构建上下文：已收集的信息 + 当前消息
 	var userPrompt strings.Builder
-	userPrompt.WriteString("当前已收集的信息（仅供参考，不要复制到结果中）：\n")
-	fieldNames := map[string]string{
-		"app_version":     "App版本",
-		"glasses_version": "眼镜版本",
-		"ring_version":    "戒指版本",
-		"device":          "设备信息",
-		"user":            "用户信息（SN号）",
-		"issue":           "问题描述",
-	}
-	for _, key := range []string{"app_version", "glasses_version", "ring_version", "device", "user", "issue"} {
+	userPrompt.WriteString("Already collected info (reference only, do NOT copy into result):\n")
+	for _, key := range AllFieldKeys {
+		name := FieldDisplayNames[key]
 		if val, ok := collectedInfo[key]; ok && val != "" {
-			userPrompt.WriteString(fmt.Sprintf("- %s: %s（已收集）\n", fieldNames[key], val))
+			userPrompt.WriteString(fmt.Sprintf("- %s: %s (collected)\n", name, val))
 		} else {
-			userPrompt.WriteString(fmt.Sprintf("- %s: 未收集\n", fieldNames[key]))
+			userPrompt.WriteString(fmt.Sprintf("- %s: not yet collected\n", name))
 		}
 	}
-	userPrompt.WriteString(fmt.Sprintf("\n用户当前消息：%s\n\n请从这条消息中提取信息，返回 JSON。", userMessage))
+	userPrompt.WriteString(fmt.Sprintf("\nUser's current message: %s\n\nExtract info from this message and return JSON.", userMessage))
 
 	messages = append(messages, openai.ChatCompletionMessage{
 		Role:    openai.ChatMessageRoleUser,
@@ -177,15 +204,22 @@ func parseExtractionResult(content string) (*ExtractionResult, error) {
 	}
 
 	// 清理提取的值（去除空白和无意义内容）
+	result.Issue = cleanExtractedValue(result.Issue)
+	result.OccurTime = cleanExtractedValue(result.OccurTime)
+	result.Reproducible = cleanExtractedValue(result.Reproducible)
+	result.VPN = cleanExtractedValue(result.VPN)
 	result.AppVersion = cleanExtractedValue(result.AppVersion)
 	result.GlassesVersion = cleanExtractedValue(result.GlassesVersion)
+	result.GlassesSN = cleanExtractedValue(result.GlassesSN)
 	result.RingVersion = cleanExtractedValue(result.RingVersion)
-	result.Device = cleanExtractedValue(result.Device)
-	result.User = cleanExtractedValue(result.User)
-	result.Issue = cleanExtractedValue(result.Issue)
+	result.RingSN = cleanExtractedValue(result.RingSN)
+	result.PhoneModel = cleanExtractedValue(result.PhoneModel)
+	result.PhoneOS = cleanExtractedValue(result.PhoneOS)
 
-	log.Printf("[LLM] Extracted: app_version=%q, glasses_version=%q, ring_version=%q, device=%q, user=%q, issue=%q",
-		result.AppVersion, result.GlassesVersion, result.RingVersion, result.Device, result.User, result.Issue)
+	log.Printf("[LLM] Extracted: issue=%q, occur_time=%q, reproducible=%q, vpn=%q, app_version=%q, glasses_version=%q, glasses_sn=%q, ring_version=%q, ring_sn=%q, phone_model=%q, phone_os=%q",
+		result.Issue, result.OccurTime, result.Reproducible, result.VPN,
+		result.AppVersion, result.GlassesVersion, result.GlassesSN,
+		result.RingVersion, result.RingSN, result.PhoneModel, result.PhoneOS)
 
 	return &result, nil
 }
@@ -193,10 +227,34 @@ func parseExtractionResult(content string) (*ExtractionResult, error) {
 // cleanExtractedValue 清理提取的值。
 func cleanExtractedValue(val string) string {
 	val = strings.TrimSpace(val)
-	// 过滤掉无意义的占位值
+	// 过滤掉无意义的占位值（中英文）
 	lower := strings.ToLower(val)
-	if lower == "未提供" || lower == "无" || lower == "未知" || lower == "null" || lower == "none" || lower == "n/a" {
-		return ""
+	meaningless := []string{
+		"未提供", "无", "未知", "null", "none", "n/a", "not provided",
+		"unknown", "not mentioned", "not specified", "not applicable",
+		"未收集", "not yet collected", "not collected",
+	}
+	for _, m := range meaningless {
+		if lower == m {
+			return ""
+		}
 	}
 	return val
+}
+
+// ToFieldMap 将 ExtractionResult 转为 map[string]string，方便与 RequiredFields 统一处理。
+func (r *ExtractionResult) ToFieldMap() map[string]string {
+	return map[string]string{
+		"issue":           r.Issue,
+		"occur_time":      r.OccurTime,
+		"reproducible":    r.Reproducible,
+		"vpn":             r.VPN,
+		"app_version":     r.AppVersion,
+		"glasses_version": r.GlassesVersion,
+		"glasses_sn":      r.GlassesSN,
+		"ring_version":    r.RingVersion,
+		"ring_sn":         r.RingSN,
+		"phone_model":     r.PhoneModel,
+		"phone_os":        r.PhoneOS,
+	}
 }

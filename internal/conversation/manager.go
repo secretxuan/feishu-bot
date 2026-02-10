@@ -47,9 +47,24 @@ func (m *Manager) ProcessMessage(ctx context.Context, chatID, senderID, senderNa
 	}
 
 	// 处理空文本
-	if strings.TrimSpace(content) == "" {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
 		return "", nil
 	}
+
+	// ====== 建议/反馈 模式检测 ======
+	if conv.Mode == models.ModeUnknown {
+		if isSuggestion(trimmed) {
+			return m.handleSuggestion(ctx, conv, trimmed)
+		}
+	}
+	// 如果已经是建议模式（不应发生，因为建议模式会立即提交），跳过
+	if conv.Mode == models.ModeSuggestion {
+		return m.handleSuggestion(ctx, conv, trimmed)
+	}
+
+	// ====== 问题反馈模式 ======
+	conv.Mode = models.ModeIssue
 
 	// 添加用户消息
 	conv.AddMessage("user", content)
@@ -89,6 +104,43 @@ func (m *Manager) ProcessMessage(ctx context.Context, chatID, senderID, senderNa
 	return response, nil
 }
 
+// isSuggestion 检测消息是否为建议/反馈格式（支持中英文）。
+func isSuggestion(text string) bool {
+	lower := strings.ToLower(text)
+	prefixes := []string{
+		"反馈：", "反馈:", "建议：", "建议:",
+		"feedback：", "feedback:", "suggestion：", "suggestion:",
+	}
+	for _, p := range prefixes {
+		if strings.HasPrefix(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// handleSuggestion 处理建议/反馈消息，直接提交。
+func (m *Manager) handleSuggestion(ctx context.Context, conv *models.Conversation, content string) (string, error) {
+	conv.Mode = models.ModeSuggestion
+	conv.SuggestionText = content
+	conv.AddMessage("user", content)
+
+	// 建议模式直接提交
+	var sb strings.Builder
+	sb.WriteString("已收到您的反馈/建议 / Your feedback has been received:\n\n")
+	sb.WriteString(content)
+	sb.WriteString("\n\n正在为您提交到技术支持团队... / Submitting to the support team...")
+
+	userMsg := sb.String()
+	conv.AddMessage("assistant", userMsg)
+
+	if err := m.store.SaveConversation(ctx, conv); err != nil {
+		return "", fmt.Errorf("failed to save conversation: %w", err)
+	}
+
+	return EscalatePrefix + userMsg, nil
+}
+
 // handleFileMessage 处理文件类消息。
 func (m *Manager) handleFileMessage(ctx context.Context, conv *models.Conversation, content, fileKey, messageID string) (string, error) {
 	// 记录文件信息（messageID + fileKey + 文件名）
@@ -107,9 +159,14 @@ func (m *Manager) handleFileMessage(ctx context.Context, conv *models.Conversati
 
 	conv.AddMessage("user", content)
 
+	// 设置为问题模式（如果还未确定）
+	if conv.Mode == models.ModeUnknown {
+		conv.Mode = models.ModeIssue
+	}
+
 	// 检查信息是否已完整
 	if conv.IsInfoComplete() {
-		conv.AddMessage("assistant", "收到文件。信息已完整，正在为您提交...")
+		conv.AddMessage("assistant", "收到文件。信息已完整，正在为您提交...\nFile received. All info collected, submitting...")
 		if err := m.store.SaveConversation(ctx, conv); err != nil {
 			return "", err
 		}
@@ -119,12 +176,12 @@ func (m *Manager) handleFileMessage(ctx context.Context, conv *models.Conversati
 	// 信息不完整，提示用户
 	missing := conv.GetMissingFields()
 	var sb strings.Builder
-	sb.WriteString("收到文件，已记录。\n\n")
-	sb.WriteString("还需要以下信息：\n")
+	sb.WriteString("收到文件，已记录。/ File received.\n\n")
+	sb.WriteString("还需要以下信息 / Still need the following info:\n")
 	for _, name := range missing {
 		sb.WriteString(fmt.Sprintf("- %s\n", name))
 	}
-	sb.WriteString("\n回复「转人工」可直接提交当前信息。")
+	sb.WriteString("\n回复「转人工」或 \"submit\" 可直接提交当前信息。\nReply \"submit\" to submit current info directly.")
 
 	response := sb.String()
 	conv.AddMessage("assistant", response)
@@ -151,36 +208,25 @@ func (m *Manager) getCollectedInfoSnapshot(conv *models.Conversation) map[string
 func (m *Manager) mergeExtractedInfo(conv *models.Conversation, result *llm.ExtractionResult, oldInfo map[string]string) []string {
 	var newParts []string
 
-	type fieldMapping struct {
-		key      string
-		name     string
-		newValue string
-	}
+	fieldMap := result.ToFieldMap()
 
-	fields := []fieldMapping{
-		{"app_version", "App版本", result.AppVersion},
-		{"glasses_version", "眼镜版本", result.GlassesVersion},
-		{"ring_version", "戒指版本", result.RingVersion},
-		{"device", "设备信息", result.Device},
-		{"user", "用户信息（SN号）", result.User},
-		{"issue", "问题描述", result.Issue},
-	}
-
-	for _, f := range fields {
-		if f.newValue == "" {
+	for _, key := range llm.AllFieldKeys {
+		newValue := fieldMap[key]
+		if newValue == "" {
 			continue // LLM 没有从当前消息中提取到此字段
 		}
-		oldVal := oldInfo[f.key]
-		if oldVal == f.newValue {
+		oldVal := oldInfo[key]
+		if oldVal == newValue {
 			continue // 值没有变化，跳过
 		}
-		conv.SetCollectedInfo(f.key, f.newValue)
+		name := llm.FieldDisplayNames[key]
+		conv.SetCollectedInfo(key, newValue)
 		if oldVal == "" {
-			newParts = append(newParts, fmt.Sprintf("%s: %s", f.name, f.newValue))
+			newParts = append(newParts, fmt.Sprintf("%s: %s", name, newValue))
 		} else {
-			newParts = append(newParts, fmt.Sprintf("%s: %s（已更新）", f.name, f.newValue))
+			newParts = append(newParts, fmt.Sprintf("%s: %s (updated)", name, newValue))
 		}
-		log.Printf("[Manager] Collected %s = %q (was %q)", f.key, f.newValue, oldVal)
+		log.Printf("[Manager] Collected %s = %q (was %q)", key, newValue, oldVal)
 	}
 
 	return newParts
@@ -193,35 +239,40 @@ func (m *Manager) buildSmartResponse(newInfoParts []string, conv *models.Convers
 
 	// 第一次对话（没有提取到任何信息），发送欢迎消息
 	if len(newInfoParts) == 0 && len(conv.Messages) <= 2 {
-		sb.WriteString("您好，我是技术支持助手。\n\n")
-		sb.WriteString("为了帮您处理问题，请提供以下信息：\n")
+		sb.WriteString("您好，我是技术支持助手。/ Hi, I'm the tech support assistant.\n\n")
+		sb.WriteString("📋 反馈问题，请提供以下信息 / To report an issue, please provide:\n")
 		for _, name := range missing {
-			sb.WriteString(fmt.Sprintf("- %s\n", name))
+			sb.WriteString(fmt.Sprintf("  - %s\n", name))
 		}
-		sb.WriteString("\n您可以一次性告诉我，也可以分多次发送。\n")
-		sb.WriteString("如有日志文件，可直接发送附件。")
+		sb.WriteString("\n💡 反馈建议，请直接发送 / To submit a suggestion, send:\n")
+		sb.WriteString("  反馈：您的内容 / feedback: your content\n")
+		sb.WriteString("  建议：您的内容 / suggestion: your content\n")
+		sb.WriteString("\n您可以一次性告诉我，也可以分多次发送。\nYou can provide all info at once or send it in multiple messages.\n")
+		sb.WriteString("如有日志文件，可直接发送附件。\nIf you have log files, feel free to send them as attachments.")
 		return sb.String()
 	}
 
 	// 有新收集的信息
 	if len(newInfoParts) > 0 {
-		sb.WriteString("已记录：")
-		sb.WriteString(strings.Join(newInfoParts, "、"))
-		sb.WriteString("\n\n")
+		sb.WriteString("已记录 / Noted:\n")
+		for _, part := range newInfoParts {
+			sb.WriteString(fmt.Sprintf("  ✅ %s\n", part))
+		}
+		sb.WriteString("\n")
 	}
 
 	// 还有缺失信息
 	if len(missing) > 0 {
 		if len(newInfoParts) == 0 {
 			// 用户发了消息但没有提取到新信息
-			sb.WriteString("请继续提供以下信息：\n")
+			sb.WriteString("请继续提供以下信息 / Please provide the following info:\n")
 		} else {
-			sb.WriteString("还需要以下信息：\n")
+			sb.WriteString("还需要以下信息 / Still need:\n")
 		}
 		for _, name := range missing {
-			sb.WriteString(fmt.Sprintf("- %s\n", name))
+			sb.WriteString(fmt.Sprintf("  - %s\n", name))
 		}
-		sb.WriteString("\n回复「转人工」可直接提交当前信息。")
+		sb.WriteString("\n回复「转人工」或 \"submit\" 可直接提交当前信息。\nReply \"submit\" to submit current info directly.")
 	}
 
 	return sb.String()
@@ -230,9 +281,13 @@ func (m *Manager) buildSmartResponse(newInfoParts []string, conv *models.Convers
 // buildEscalateResponse 构建自动转人工的响应。
 func (m *Manager) buildEscalateResponse(ctx context.Context, conv *models.Conversation) (string, error) {
 	var sb strings.Builder
-	sb.WriteString("信息收集完毕！\n\n")
+	if conv.Mode == models.ModeSuggestion {
+		sb.WriteString("已收到您的反馈/建议，正在提交...\nYour feedback has been received, submitting...\n\n")
+	} else {
+		sb.WriteString("信息收集完毕！/ All info collected!\n\n")
+	}
 	sb.WriteString(conv.GetUserSummary())
-	sb.WriteString("\n正在为您提交到技术支持团队...")
+	sb.WriteString("\n正在为您提交到技术支持团队... / Submitting to the support team...")
 
 	userMsg := sb.String()
 	conv.AddMessage("assistant", userMsg)

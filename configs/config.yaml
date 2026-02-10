@@ -32,7 +32,7 @@ redis:
 
 # 机器人配置
 bot:
-  # 转人工触发关键词列表
+  # 转人工触发关键词列表（中英文）
   escalation_keywords:
     - "转人工"
     - "人工"
@@ -41,11 +41,19 @@ bot:
     - "客服"
     - "确认提交"
     - "提交"
-  # 清除上下文触发关键词列表
+    - "submit"
+    - "escalate"
+    - "agent"
+    - "human"
+    - "support"
+  # 清除上下文触发关键词列表（中英文）
   clear_context_keywords:
     - "忘掉上下文"
     - "清除上下文"
     - "重新开始"
     - "清空"
+    - "reset"
+    - "clear"
+    - "start over"
   # 会话超时时间（分钟）
   session_timeout: 30

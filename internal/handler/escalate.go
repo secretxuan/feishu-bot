@@ -41,7 +41,13 @@ func (h *EscalationHandler) HandleEscalation(ctx context.Context, conv *models.C
 	summary := conv.GetInfoSummary()
 	log.Printf("[Escalation] Sending summary to group %s with @user %s", h.escalationGroupID, conv.SenderID)
 
-	rootMsgID, err := h.feishuClient.SendPostMessage(ctx, h.escalationGroupID, "用户支持请求", summary, conv.SenderID)
+	// 根据模式选择标题
+	title := "用户问题反馈 / User Issue Report"
+	if conv.Mode == models.ModeSuggestion {
+		title = "用户建议反馈 / User Suggestion"
+	}
+
+	rootMsgID, err := h.feishuClient.SendPostMessage(ctx, h.escalationGroupID, title, summary, conv.SenderID)
 	if err != nil {
 		log.Printf("[Escalation] Failed to send summary: %v", err)
 		return err
@@ -59,7 +65,7 @@ func (h *EscalationHandler) HandleEscalation(ctx context.Context, conv *models.C
 	}
 
 	// 4. 通知用户
-	userMsg := "✅ 您的问题已提交给技术支持团队，我们会尽快处理！\n您已被邀请到技术支持群，可以在群里直接跟进问题。"
+	userMsg := "✅ 您的问题已提交给技术支持团队，我们会尽快处理！\nYour issue has been submitted to the support team. We'll handle it ASAP!\n\n您已被邀请到技术支持群，可以在群里直接跟进问题。\nYou've been invited to the support group where you can follow up directly."
 	if err := h.feishuClient.SendTextMessage(ctx, conv.ChatID, userMsg); err != nil {
 		log.Printf("[Escalation] Failed to notify user: %v", err)
 	}
