@@ -21,14 +21,16 @@ type FileInfo struct {
 	FileName  string `json:"file_name"`  // 文件名
 }
 
-// RequiredFields 定义需要收集的 4 项必填信息。
+// RequiredFields 定义需要收集的 7 项必填信息。
 var RequiredFields = []struct {
 	Key  string
 	Name string
 }{
-	{"version", "版本信息"},
+	{"app_version", "App版本"},
+	{"glasses_version", "眼镜版本"},
+	{"ring_version", "戒指版本"},
 	{"device", "设备信息"},
-	{"user", "用户信息"},
+	{"user", "用户信息（SN号）"},
 	{"issue", "问题描述"},
 }
 
@@ -115,13 +117,10 @@ func (c *Conversation) GetMissingFields() []string {
 }
 
 // GetInfoSummary 获取已收集信息的总结（用于发送到群组）。
+// 注意：用户ID 通过消息中的 @用户 实现，不再写在文本中。
 func (c *Conversation) GetInfoSummary() string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("用户ID: %s\n", c.SenderID))
-	if c.SenderName != "" {
-		sb.WriteString(fmt.Sprintf("用户名称: %s\n", c.SenderName))
-	}
 	sb.WriteString(fmt.Sprintf("提交时间: %s\n\n", c.UpdatedAt.Format("2006-01-02 15:04:05")))
 
 	for _, field := range RequiredFields {

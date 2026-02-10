@@ -196,20 +196,35 @@ func (c *Client) ForwardMessage(ctx context.Context, messageID, targetChatID str
 }
 
 // SendPostMessage 发送富文本（post）消息到指定聊天，返回消息ID（用于话题内回复）。
-func (c *Client) SendPostMessage(ctx context.Context, chatID, title, textContent string) (string, error) {
-	log.Printf("[Feishu] SendPostMessage: chatID=%s, title=%s", chatID, title)
+// atUserID 可选，如果不为空则在消息中 @该用户。
+func (c *Client) SendPostMessage(ctx context.Context, chatID, title, textContent, atUserOpenID string) (string, error) {
+	log.Printf("[Feishu] SendPostMessage: chatID=%s, title=%s, atUser=%s", chatID, title, atUserOpenID)
+
+	// 构建富文本内容段落
+	var contentParagraphs [][]map[string]interface{}
+
+	// 第一段：@用户（如果有的话）
+	if atUserOpenID != "" {
+		contentParagraphs = append(contentParagraphs, []map[string]interface{}{
+			{
+				"tag":     "at",
+				"user_id": atUserOpenID,
+			},
+		})
+	}
+
+	// 第二段：正文
+	contentParagraphs = append(contentParagraphs, []map[string]interface{}{
+		{
+			"tag":  "text",
+			"text": textContent,
+		},
+	})
 
 	postContent := map[string]interface{}{
 		"zh_cn": map[string]interface{}{
-			"title": title,
-			"content": [][]map[string]interface{}{
-				{
-					{
-						"tag":  "text",
-						"text": textContent,
-					},
-				},
-			},
+			"title":   title,
+			"content": contentParagraphs,
 		},
 	}
 
@@ -244,6 +259,31 @@ func (c *Client) SendPostMessage(ctx context.Context, chatID, title, textContent
 
 	log.Printf("[Feishu] Post message sent successfully, msgID=%s", msgID)
 	return msgID, nil
+}
+
+// InviteUserToChat 邀请用户加入群聊。
+func (c *Client) InviteUserToChat(ctx context.Context, chatID, userOpenID string) error {
+	log.Printf("[Feishu] InviteUserToChat: chatID=%s, user=%s", chatID, userOpenID)
+
+	req := larkim.NewCreateChatMembersReqBuilder().
+		ChatId(chatID).
+		MemberIdType("open_id").
+		Body(larkim.NewCreateChatMembersReqBodyBuilder().
+			IdList([]string{userOpenID}).
+			Build()).
+		Build()
+
+	resp, err := c.larkCli.Im.ChatMembers.Create(ctx, req)
+	if err != nil {
+		return fmt.Errorf("failed to invite user to chat: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("invite user failed: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	log.Printf("[Feishu] User %s invited to chat %s successfully", userOpenID, chatID)
+	return nil
 }
 
 // ReplyFileInThread 在话题内回复文件（将文件放入与摘要同一话题中）。

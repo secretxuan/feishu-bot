@@ -30,9 +30,10 @@ feishu-bot/
 │   │
 │   ├── feishu/
 │   │   ├── client.go                  # 飞书 API 客户端：封装 lark SDK，提供 SendTextMessage /
-│   │                                  # SendPostMessage（返回 msgID）/ SendFileMessage /
+│   │                                  # SendPostMessage（返回 msgID，支持 @用户）/ SendFileMessage /
 │   │                                  # ForwardMessage / ReplyMessage / ReplyFileInThread /
-│   │                                  # UploadFile / DownloadMessageResource / GetMessage 等方法
+│   │                                  # UploadFile / DownloadMessageResource / GetMessage /
+│   │                                  # InviteUserToChat（邀请用户入群）等方法
 │   │   ├── event_handler.go           # 飞书事件处理器：WebSocket 事件入口，实现原子去重
 │   │                                  # (SETNX) + 会话级互斥锁 (sync.Map)，提取消息内容，
 │   │                                  # 分发到 MessageHandler
@@ -41,14 +42,15 @@ feishu-bot/
 │   │                                  # 当前未在主流程中使用，保留供后续扩展
 │   │
 │   ├── handler/
-│   │   └── escalate.go                # 转人工处理器：构建信息摘要发送到群组（创建话题），
-│   │                                  # 下载用户文件后重新上传并在同一话题内回复（ReplyInThread），
-│   │                                  # 确保摘要和附件在同一个话题中；通知用户提交成功
+│   │   └── escalate.go                # 转人工处理器：邀请用户入群 → 发送信息摘要到群组话题
+│   │                                  # （@用户）→ 下载文件后重新上传并在话题内回复（ReplyInThread）
+│   │                                  # → 通知用户；确保摘要和附件在同一个话题中
 │   │
 │   └── llm/
 │       └── client.go                  # LLM 客户端：定义 Client 接口 (ExtractInfo)，实现
-│                                      # OpenAI 兼容的信息提取；从用户单条消息中提取 version /
-│                                      # device / user / issue 四个字段，不依赖对话历史
+│                                      # OpenAI 兼容的信息提取；从用户单条消息中提取 app_version /
+│                                      # glasses_version / ring_version / device / user / issue
+│                                      # 六个字段，不依赖对话历史
 │
 ├── pkg/
 │   └── models/

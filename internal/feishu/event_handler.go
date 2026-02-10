@@ -61,7 +61,7 @@ func (e *EventHandlers) handleP2PChatCreated(ctx context.Context, event *larkim.
 
 	// 发送欢迎消息
 	if chatID != "" && e.feishuClient != nil {
-		welcome := "您好，我是技术支持助手。\n\n为了帮您处理问题，请提供以下信息：\n- 版本信息\n- 设备信息\n- 用户信息\n- 问题描述\n\n您可以一次性告诉我，也可以分多次发送。\n如有日志文件，可直接发送附件。"
+		welcome := "您好，我是技术支持助手。\n\n为了帮您处理问题，请提供以下信息：\n- App版本\n- 眼镜版本\n- 戒指版本\n- 设备信息\n- 用户信息（SN号）\n- 问题描述\n\n您可以一次性告诉我，也可以分多次发送。\n如有日志文件，可直接发送附件。"
 		if err := e.feishuClient.SendTextMessage(ctx, chatID, welcome); err != nil {
 			log.Printf("[Event] Failed to send welcome message: %v", err)
 		}

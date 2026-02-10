@@ -24,22 +24,31 @@ func NewEscalationHandler(client *feishu.Client, escalationGroupID string) *Esca
 	}
 }
 
-// HandleEscalation 处理转人工请求：发送摘要到群组话题，在同一话题内回复文件，通知用户。
+// HandleEscalation 处理转人工请求：邀请用户入群 → 发送摘要（@用户）→ 话题内回复文件 → 通知用户。
 func (h *EscalationHandler) HandleEscalation(ctx context.Context, conv *models.Conversation) error {
 	log.Printf("[Escalation] Processing for chat %s, user %s", conv.ChatID, conv.SenderID)
 
-	// 1. 发送摘要到群组（创建话题根消息）
-	summary := conv.GetInfoSummary()
-	log.Printf("[Escalation] Sending summary to group %s", h.escalationGroupID)
+	// 1. 邀请用户到技术支持群
+	if conv.SenderID != "" {
+		log.Printf("[Escalation] Inviting user %s to group %s", conv.SenderID, h.escalationGroupID)
+		if err := h.feishuClient.InviteUserToChat(ctx, h.escalationGroupID, conv.SenderID); err != nil {
+			log.Printf("[Escalation] Failed to invite user (may already be in group): %v", err)
+			// 邀请失败不阻塞流程（用户可能已在群中）
+		}
+	}
 
-	rootMsgID, err := h.feishuClient.SendPostMessage(ctx, h.escalationGroupID, "用户支持请求", summary)
+	// 2. 发送摘要到群组（创建话题根消息），并 @用户
+	summary := conv.GetInfoSummary()
+	log.Printf("[Escalation] Sending summary to group %s with @user %s", h.escalationGroupID, conv.SenderID)
+
+	rootMsgID, err := h.feishuClient.SendPostMessage(ctx, h.escalationGroupID, "用户支持请求", summary, conv.SenderID)
 	if err != nil {
 		log.Printf("[Escalation] Failed to send summary: %v", err)
 		return err
 	}
 	log.Printf("[Escalation] Summary sent, rootMsgID=%s", rootMsgID)
 
-	// 2. 在同一话题内回复文件（下载 → 重新上传 → 话题内回复）
+	// 3. 在同一话题内回复文件（下载 → 重新上传 → 话题内回复）
 	if conv.HasFiles() && rootMsgID != "" {
 		for _, f := range conv.Files {
 			if err := h.forwardFileInThread(ctx, rootMsgID, f); err != nil {
@@ -49,8 +58,8 @@ func (h *EscalationHandler) HandleEscalation(ctx context.Context, conv *models.C
 		}
 	}
 
-	// 3. 通知用户
-	userMsg := "✅ 您的问题已提交给技术支持团队，我们会尽快处理！"
+	// 4. 通知用户
+	userMsg := "✅ 您的问题已提交给技术支持团队，我们会尽快处理！\n您已被邀请到技术支持群，可以在群里直接跟进问题。"
 	if err := h.feishuClient.SendTextMessage(ctx, conv.ChatID, userMsg); err != nil {
 		log.Printf("[Escalation] Failed to notify user: %v", err)
 	}

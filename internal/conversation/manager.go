@@ -158,9 +158,11 @@ func (m *Manager) mergeExtractedInfo(conv *models.Conversation, result *llm.Extr
 	}
 
 	fields := []fieldMapping{
-		{"version", "版本信息", result.Version},
+		{"app_version", "App版本", result.AppVersion},
+		{"glasses_version", "眼镜版本", result.GlassesVersion},
+		{"ring_version", "戒指版本", result.RingVersion},
 		{"device", "设备信息", result.Device},
-		{"user", "用户信息", result.User},
+		{"user", "用户信息（SN号）", result.User},
 		{"issue", "问题描述", result.Issue},
 	}
 

@@ -19,10 +19,12 @@ type Client interface {
 
 // ExtractionResult 表示从单条消息中提取的信息。
 type ExtractionResult struct {
-	Version string `json:"version"`
-	Device  string `json:"device"`
-	User    string `json:"user"`
-	Issue   string `json:"issue"`
+	AppVersion     string `json:"app_version"`
+	GlassesVersion string `json:"glasses_version"`
+	RingVersion    string `json:"ring_version"`
+	Device         string `json:"device"`
+	User           string `json:"user"`
+	Issue          string `json:"issue"`
 }
 
 // ProviderConfig LLM 提供商配置。
@@ -65,13 +67,15 @@ func NewOpenAICompatibleClient(baseURL, apiKey, model string) (*OpenAICompatible
 	}, nil
 }
 
-const systemPrompt = `你是一个技术支持信息收集助手。你的唯一任务是从用户的【当前这一条消息】中提取以下四项信息。
+const systemPrompt = `你是一个技术支持信息收集助手。你的唯一任务是从用户的【当前这一条消息】中提取以下六项信息。
 
 需要收集的信息：
-1. version - 软件版本号（如 v1.2.3、2.0.1、g1 等）
-2. device - 设备型号和操作系统（如 iPhone 15/iOS 17、Windows 11、华为 Mate60 等）
-3. user - 用户姓名或工号（如 张三、工号12345 等）
-4. issue - 遇到的具体问题描述（如 无法登录、页面崩溃 等）
+1. app_version - App 版本号（如 v1.2.3、2.0.6 等，指手机 App 的版本）
+2. glasses_version - 眼镜固件版本（如 v1.0、G2 1.2.0 等，指智能眼镜的版本/型号）
+3. ring_version - 戒指固件版本（如 R1 1.0、v2.1 等，指智能戒指的版本/型号）
+4. device - 设备型号和操作系统（如 iPhone 15/iOS 17、安卓机、华为 Mate60 等）
+5. user - 用户标识，通常是 SN 号（如 S200nnnnnnn、SN12345 等）
+6. issue - 遇到的具体问题描述（如 断开连接、无法登录、页面崩溃 等）
 
 严格规则：
 - 只从用户当前这一条消息中提取新信息
@@ -80,10 +84,12 @@ const systemPrompt = `你是一个技术支持信息收集助手。你的唯一�
 - 不要把问候语（如"你好"、"请问"）当作任何信息
 - 不要猜测或编造信息
 - 如果用户纠正了之前的信息（如"版本不对，应该是v3.0"），返回新值
+- 注意区分 App 版本、眼镜版本、戒指版本：如果用户说"版本2.0.6"且没有指定是哪个，默认归为 app_version
+- 如果用户提到 G2、R1 等设备名称，这些是产品型号而非版本号，注意区分
 - 信息要简洁准确
 
 返回严格的 JSON 格式，不要有其他任何文字：
-{"version": "", "device": "", "user": "", "issue": ""}`
+{"app_version": "", "glasses_version": "", "ring_version": "", "device": "", "user": "", "issue": ""}`
 
 // ExtractInfo 从用户的单条消息中提取信息。
 func (c *OpenAICompatibleClient) ExtractInfo(ctx context.Context, userMessage string, collectedInfo map[string]string) (*ExtractionResult, error) {
@@ -98,12 +104,14 @@ func (c *OpenAICompatibleClient) ExtractInfo(ctx context.Context, userMessage st
 	var userPrompt strings.Builder
 	userPrompt.WriteString("当前已收集的信息（仅供参考，不要复制到结果中）：\n")
 	fieldNames := map[string]string{
-		"version": "版本信息",
-		"device":  "设备信息",
-		"user":    "用户信息",
-		"issue":   "问题描述",
+		"app_version":     "App版本",
+		"glasses_version": "眼镜版本",
+		"ring_version":    "戒指版本",
+		"device":          "设备信息",
+		"user":            "用户信息（SN号）",
+		"issue":           "问题描述",
 	}
-	for _, key := range []string{"version", "device", "user", "issue"} {
+	for _, key := range []string{"app_version", "glasses_version", "ring_version", "device", "user", "issue"} {
 		if val, ok := collectedInfo[key]; ok && val != "" {
 			userPrompt.WriteString(fmt.Sprintf("- %s: %s（已收集）\n", fieldNames[key], val))
 		} else {
@@ -169,13 +177,15 @@ func parseExtractionResult(content string) (*ExtractionResult, error) {
 	}
 
 	// 清理提取的值（去除空白和无意义内容）
-	result.Version = cleanExtractedValue(result.Version)
+	result.AppVersion = cleanExtractedValue(result.AppVersion)
+	result.GlassesVersion = cleanExtractedValue(result.GlassesVersion)
+	result.RingVersion = cleanExtractedValue(result.RingVersion)
 	result.Device = cleanExtractedValue(result.Device)
 	result.User = cleanExtractedValue(result.User)
 	result.Issue = cleanExtractedValue(result.Issue)
 
-	log.Printf("[LLM] Extracted: version=%q, device=%q, user=%q, issue=%q",
-		result.Version, result.Device, result.User, result.Issue)
+	log.Printf("[LLM] Extracted: app_version=%q, glasses_version=%q, ring_version=%q, device=%q, user=%q, issue=%q",
+		result.AppVersion, result.GlassesVersion, result.RingVersion, result.Device, result.User, result.Issue)
 
 	return &result, nil
 }
