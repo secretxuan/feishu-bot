@@ -15,7 +15,7 @@ llm:
   # API 基础 URL（支持自定义 endpoint）
   base_url: "https://open.bigmodel.cn/api/paas/v4"
   # 模型名称
-  model: "glm-4-flash"
+  model: "glm-4.7"
   # 最大对话轮数（传递给 LLM 的历史消息数量）
   max_history: 10
 

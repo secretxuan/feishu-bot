@@ -244,6 +244,10 @@ func (m *Manager) buildSmartResponse(newInfoParts []string, conv *models.Convers
 		for _, name := range missing {
 			sb.WriteString(fmt.Sprintf("  - %s\n", name))
 		}
+		// 展示可选字段提示
+		for _, field := range models.OptionalFields {
+			sb.WriteString(fmt.Sprintf("  - %s（可选 / optional）\n", field.Name))
+		}
 		sb.WriteString("\n💡 反馈建议，请直接发送 / To submit a suggestion, send:\n")
 		sb.WriteString("  反馈：您的内容 / feedback: your content\n")
 		sb.WriteString("  建议：您的内容 / suggestion: your content\n")
@@ -272,7 +276,7 @@ func (m *Manager) buildSmartResponse(newInfoParts []string, conv *models.Convers
 		for _, name := range missing {
 			sb.WriteString(fmt.Sprintf("  - %s\n", name))
 		}
-		sb.WriteString("\n回复「转人工」或 \"submit\" 可直接提交当前信息。\nReply \"submit\" to submit current info directly.")
+		sb.WriteString("\n回复「提交」或 \"submit\" 可直接提交当前信息。\nReply \"submit\" to submit current info directly.")
 	}
 
 	return sb.String()

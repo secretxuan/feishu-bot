@@ -30,22 +30,30 @@ type FileInfo struct {
 	FileName  string `json:"file_name"`  // 文件名
 }
 
-// RequiredFields 定义问题反馈模式需要收集的 11 项必填信息（中英双语）。
-var RequiredFields = []struct {
-	Key  string
-	Name string
-}{
-	{"issue", "问题描述 / Issue Description"},
-	{"occur_time", "发生时间 / Time of Occurrence"},
-	{"reproducible", "是否必现 / Reproducible?"},
-	{"vpn", "是否使用VPN / Using VPN?"},
-	{"app_version", "应用版本 / App Version"},
-	{"glasses_version", "眼镜版本 / Glasses Firmware"},
-	{"glasses_sn", "眼镜SN号 / Glasses SN"},
-	{"ring_version", "戒指版本 / Ring Firmware"},
-	{"ring_sn", "戒指SN号 / Ring SN"},
-	{"phone_model", "手机型号 / Phone Model"},
-	{"phone_os", "手机系统版本 / Phone OS Version"},
+// FieldDef 定义一个信息字段。
+type FieldDef struct {
+	Key       string // JSON key / CollectedInfo key
+	Name      string // 用户端双语显示名
+	ShortName string // 群组摘要中文短名（用于【】标题）
+}
+
+// RequiredFields 定义问题反馈模式需要收集的必填信息。
+var RequiredFields = []FieldDef{
+	{"issue", "问题描述 / Issue Description", "问题描述"},
+	{"occur_time", "发生时间 / Time of Occurrence", "发生时间"},
+	{"reproducible", "是否必现 / Reproducible?", "是否必现"},
+	{"app_version", "应用版本 / App Version", "应用版本"},
+	{"glasses_version", "眼镜版本 / Glasses Firmware", "眼镜版本"},
+	{"glasses_sn", "眼镜SN号 / Glasses SN", "眼镜SN号"},
+	{"ring_version", "戒指版本 / Ring Firmware", "戒指版本"},
+	{"ring_sn", "戒指SN号 / Ring SN", "戒指SN号"},
+	{"phone_model", "手机型号 / Phone Model", "手机型号"},
+	{"phone_os", "手机系统版本 / Phone OS Version", "手机系统版本"},
+}
+
+// OptionalFields 定义可选信息字段（用户填了就记录，不填不阻塞提交）。
+var OptionalFields = []FieldDef{
+	{"vpn", "是否使用VPN / Using VPN?", "是否使用VPN"},
 }
 
 // Conversation 表示用户会话。
@@ -136,35 +144,40 @@ func (c *Conversation) GetMissingFields() []string {
 	return missing
 }
 
-// GetInfoSummary 获取已收集信息的总结（用于发送到群组）。
+// GetInfoSummary 获取已收集信息的总结（用于发送到群组，纯中文，【】标题格式）。
 // 注意：用户ID 通过消息中的 @用户 实现，不再写在文本中。
 func (c *Conversation) GetInfoSummary() string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("提交时间 / Submitted: %s\n", c.UpdatedAt.Format("2006-01-02 15:04:05")))
+	sb.WriteString(fmt.Sprintf("【提交时间】%s\n", c.UpdatedAt.Format("2006-01-02 15:04:05")))
 
 	if c.Mode == ModeSuggestion {
-		sb.WriteString("类型 / Type: 建议反馈 / Suggestion\n\n")
-		sb.WriteString(fmt.Sprintf("内容 / Content: %s\n", c.SuggestionText))
+		sb.WriteString("【类型】建议反馈\n\n")
+		sb.WriteString(fmt.Sprintf("【内容】%s\n", c.SuggestionText))
 	} else {
-		sb.WriteString("类型 / Type: 问题反馈 / Issue Report\n\n")
+		sb.WriteString("【类型】问题反馈\n\n")
+		// 必填字段：有值才展示
 		for _, field := range RequiredFields {
 			if val, ok := c.CollectedInfo[field.Key]; ok && val != "" {
-				sb.WriteString(fmt.Sprintf("%s: %s\n", field.Name, val))
-			} else {
-				sb.WriteString(fmt.Sprintf("%s: 未提供 / Not provided\n", field.Name))
+				sb.WriteString(fmt.Sprintf("【%s】%s\n", field.ShortName, val))
+			}
+		}
+		// 可选字段：有值才展示
+		for _, field := range OptionalFields {
+			if val, ok := c.CollectedInfo[field.Key]; ok && val != "" {
+				sb.WriteString(fmt.Sprintf("【%s】%s\n", field.ShortName, val))
 			}
 		}
 	}
 
 	if c.HasFiles() {
-		sb.WriteString("\n日志文件 / Log files: 已上传（见话题内附件）/ Uploaded (see attachments in thread)\n")
+		sb.WriteString("\n【日志文件】已上传（见话题内附件）\n")
 	}
 
 	return sb.String()
 }
 
-// GetUserSummary 获取用于展示给用户的信息摘要。
+// GetUserSummary 获取用于展示给用户的信息摘要（只显示已填写的字段）。
 func (c *Conversation) GetUserSummary() string {
 	var sb strings.Builder
 
@@ -172,6 +185,11 @@ func (c *Conversation) GetUserSummary() string {
 		sb.WriteString(fmt.Sprintf("- 建议内容 / Suggestion: %s\n", c.SuggestionText))
 	} else {
 		for _, field := range RequiredFields {
+			if val, ok := c.CollectedInfo[field.Key]; ok && val != "" {
+				sb.WriteString(fmt.Sprintf("- %s: %s\n", field.Name, val))
+			}
+		}
+		for _, field := range OptionalFields {
 			if val, ok := c.CollectedInfo[field.Key]; ok && val != "" {
 				sb.WriteString(fmt.Sprintf("- %s: %s\n", field.Name, val))
 			}

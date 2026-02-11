@@ -42,9 +42,9 @@ func (h *EscalationHandler) HandleEscalation(ctx context.Context, conv *models.C
 	log.Printf("[Escalation] Sending summary to group %s with @user %s", h.escalationGroupID, conv.SenderID)
 
 	// 根据模式选择标题
-	title := "用户问题反馈 / User Issue Report"
+	title := "用户问题反馈"
 	if conv.Mode == models.ModeSuggestion {
-		title = "用户建议反馈 / User Suggestion"
+		title = "用户建议反馈"
 	}
 
 	rootMsgID, err := h.feishuClient.SendPostMessage(ctx, h.escalationGroupID, title, summary, conv.SenderID)
